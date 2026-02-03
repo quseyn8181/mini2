@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aslanov Chat: Live Typing</title>
+    <style>
+        :root {
+            --primary: #0088cc;
+            --bg: #e6ebee;
+            --white: #ffffff;
+            --my-msg: #effdde;
+            --their-msg: #ffffff;
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg); 
+            margin: 0; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+        }
+
+        .container { 
+            background: var(--white); 
+            width: 100%; 
+            max-width: 450px;
+            height: 100vh;
+            max-height: 800px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            position: relative;
+        }
+
+        @media (min-width: 480px) {
+            .container { height: 90vh; border-radius: 12px; }
+        }
+
+        h2 { margin: 0; text-align: center; color: #333; }
+        
+        /* Авторизация */
+        #authBox { padding: 40px 20px; justify-content: center; gap: 15px; }
+        input { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; outline: none; }
+        button { padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        button:hover { opacity: 0.9; }
+        .btn-sec { background: transparent; color: #666; font-weight: normal; }
+
+        /* Верхняя панель */
+        .header {
+            padding: 15px;
+            background: var(--white);
+            border-bottom: 1px solid #eee;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            z-index: 10;
+        }
+
+        /* Индикатор печати */
+        .typing-indicator {
+            font-size: 12px;
+            color: var(--primary);
+            font-style: italic;
+            height: 15px; /* Фиксированная высота чтобы не прыгало */
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            visibility: hidden; /* Скрыто по умолчанию */
+        }
+        .typing-indicator.active { visibility: visible; }
+        
+        /* Анимация точек */
+        .dot {
+            width: 4px; height: 4px; background: var(--primary); border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .dot:nth-child(1) { animation-delay: -0.32s; }
+        .dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+        /* Чат */
+        #chat { flex: 1; overflow-y: auto; background: #72b0d640; padding: 15px; display: flex; flex-direction: column; gap: 8px; }
+
+        .msg-row { display: flex; width: 100%; }
+        .msg-row.mine { justify-content: flex-end; }
+        .msg { max-width: 75%; padding: 8px 12px; border-radius: 12px; font-size: 15px; line-height: 1.4; box-shadow: 0 1px 1px rgba(0,0,0,0.1); position: relative; }
+        .msg.mine { background: var(--my-msg); border-bottom-right-radius: 2px; }
+        .msg.theirs { background: var(--their-msg); border-bottom-left-radius: 2px; }
+        .msg-name { font-size: 11px; font-weight: bold; color: var(--primary); display: block; margin-bottom: 2px; }
+        .msg-time { font-size: 10px; color: #999; text-align: right; margin-top: 4px; display: block; }
+
+        .input-area { padding: 10px; background: var(--white); border-top: 1px solid #eee; display: flex; gap: 10px; align-items: center; }
+        .input-area input { flex: 1; margin: 0; }
+    </style>
+</head>
+<body>
+
+<div id="authBox" class="container">
+    <h2>Вход Aslanov Chat</h2>
+    <input id="email" type="email" placeholder="Email">
+    <input id="pass" type="password" placeholder="Пароль">
+    <button id="btnLogin">Войти</button>
+    <button id="btnReg" class="btn-sec">Регистрация</button>
+</div>
+
+<div id="chatBox" class="container" style="display:none">
+    <div class="header">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span id="myUidDisplay" style="font-size:10px; color:#aaa;">UID: ...</span>
+            <button id="btnExit" style="background:none; color:red; padding:0; width:auto; font-size:12px;">Выход</button>
+        </div>
+        
+        <div style="display:flex; gap:5px;">
+            <input id="myNick" placeholder="Твое имя" style="padding:8px; font-size:13px;">
+            <button id="btnSaveNick" style="width:auto; padding:5px 10px; font-size:12px;">Сохр.</button>
+        </div>
+
+        <div style="display:flex; gap:5px; margin-top:5px;">
+            <input id="toUid" placeholder="UID собеседника" style="padding:8px; font-size:13px;">
+            <button id="btnStart" style="width:auto; padding:5px 15px; font-size:13px;">Чат</button>
+        </div>
+        
+        <div id="typingArea" class="typing-indicator">
+            <span id="typerName">Собеседник</span> печатает
+            <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        </div>
+    </div>
+
+    <div id="chat"></div>
+
+    <div class="input-area">
+        <input id="msg" placeholder="Сообщение...">
+        <button id="btnSend" style="width:50px;">➤</button>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, setDoc, getDoc, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    // КОНФИГ
+    const firebaseConfig = {
+        apiKey: "AIzaSyCq4IuYRYx4a78u5uf4cc-WrpdWks3BLrg",
+        authDomain: "aslanovchat-e4964.firebaseapp.com",
+        projectId: "aslanovchat-e4964",
+        storageBucket: "aslanovchat-e4964.appspot.com",
+        messagingSenderId: "110257571643",
+        appId: "1:110257571643:web:6dd1529642fc6b665e991e",
+        measurementId: "G-GPGYLEEY5J"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // ЭЛЕМЕНТЫ
+    const els = {
+        auth: document.getElementById("authBox"),
+        chatUI: document.getElementById("chatBox"),
+        chat: document.getElementById("chat"),
+        email: document.getElementById("email"),
+        pass: document.getElementById("pass"),
+        toUid: document.getElementById("toUid"),
+        msg: document.getElementById("msg"),
+        myNick: document.getElementById("myNick"),
+        uidDisplay: document.getElementById("myUidDisplay"),
+        typingArea: document.getElementById("typingArea"),
+        typerName: document.getElementById("typerName")
+    };
+
+    let currentChatId = null;
+    let unsubMsgs = null;
+    let unsubTyping = null;
+    let currentUserData = { nickname: "Аноним" };
+    let typingTimeout = null;
+
+    // === AUTH ===
+    document.getElementById("btnLogin").onclick = () => signInWithEmailAndPassword(auth, els.email.value, els.pass.value).catch(alert);
+    document.getElementById("btnReg").onclick = async () => {
+        try {
+            const cred = await createUserWithEmailAndPassword(auth, els.email.value, els.pass.value);
+            await setDoc(doc(db, "users", cred.user.uid), { email: els.email.value, nickname: "Новичок" });
+        } catch(e) { alert(e.message); }
+    };
+    document.getElementById("btnExit").onclick = () => { localStorage.removeItem("lastUid"); signOut(auth); };
+
+    // === UTILS ===
+    const getChatId = (u1, u2) => [u1, u2].sort().join("_");
+    const formatTime = (ts) => {
+        if(!ts) return "";
+        const d = new Date(ts);
+        return d.getHours().toString().padStart(2,'0') + ":" + d.getMinutes().toString().padStart(2,'0');
+    }
+
+    async function loadProfile(uid) {
+        const d = await getDoc(doc(db, "users", uid));
+        if(d.exists()) {
+            currentUserData = d.data();
+            els.myNick.value = currentUserData.nickname || "";
+        }
+    }
+
+    document.getElementById("btnSaveNick").onclick = async () => {
+        if(!auth.currentUser) return;
+        const nn = els.myNick.value.trim() || "User";
+        await setDoc(doc(db, "users", auth.currentUser.uid), { nickname: nn }, { merge: true });
+        currentUserData.nickname = nn;
+        alert("Имя сохранено!");
+    };
+
+    // === ЛОГИКА "ПЕЧАТАЕТ..." ===
+    async function setTypingStatus(isTyping) {
+        if(!currentChatId) return;
+        // Записываем статус в спец. документ 'status' внутри чата
+        const statusRef = doc(db, "chats", currentChatId, "info", "typing");
+        await setDoc(statusRef, { 
+            [auth.currentUser.uid]: { 
+                isTyping: isTyping, 
+                name: currentUserData.nickname 
+            } 
+        }, { merge: true });
+    }
+
+    // Слушаем ввод текста
+    els.msg.addEventListener('input', () => {
+        setTypingStatus(true);
+        // Если перестал печатать на 2 сек - убираем статус
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => setTypingStatus(false), 2000);
+    });
+
+    // === ЧАТ ===
+    async function startChat() {
+        const partnerUid = els.toUid.value.trim();
+        if(!partnerUid || partnerUid === auth.currentUser.uid) return;
+        localStorage.setItem("lastUid", partnerUid);
+
+        if(unsubMsgs) unsubMsgs();
+        if(unsubTyping) unsubTyping();
+
+        currentChatId = getChatId(auth.currentUser.uid, partnerUid);
+        els.chat.innerHTML = "<p style='text-align:center; color:#999'>Загрузка...</p>";
+
+        // 1. СЛУШАЕМ СООБЩЕНИЯ
+        const q = query(collection(db, "chats", currentChatId, "messages"), orderBy("time", "asc"));
+        unsubMsgs = onSnapshot(q, (snap) => {
+            els.chat.innerHTML = "";
+            snap.forEach(d => {
+                const m = d.data();
+                const isMine = m.uid === auth.currentUser.uid;
+                
+                const div = document.createElement("div");
+                div.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
+                
+                div.innerHTML = `
+                    <div class="msg ${isMine ? 'mine' : 'theirs'}">
+                        ${!isMine && m.senderName ? `<span class="msg-name">${m.senderName}</span>` : ''}
+                        ${m.text}
+                        <span class="msg-time">${formatTime(m.time)}</span>
+                    </div>
+                `;
+                // Удаление по клику
+                if(isMine) div.querySelector('.msg').onclick = () => {
+                   if(confirm("Удалить?")) deleteDoc(doc(db, "chats", currentChatId, "messages", d.id));
+                };
+                
+                els.chat.appendChild(div);
+            });
+            els.chat.scrollTop = els.chat.scrollHeight;
+        });
+
+        // 2. СЛУШАЕМ СТАТУС "ПЕЧАТАЕТ"
+        const typingRef = doc(db, "chats", currentChatId, "info", "typing");
+        unsubTyping = onSnapshot(typingRef, (snap) => {
+            if(snap.exists()) {
+                const data = snap.data();
+                // Ищем статус НЕ моего UID
+                const partnerKey = Object.keys(data).find(k => k !== auth.currentUser.uid);
+                
+                if(partnerKey && data[partnerKey].isTyping) {
+                    els.typingArea.classList.add("active");
+                    els.typerName.innerText = data[partnerKey].name || "Собеседник";
+                } else {
+                    els.typingArea.classList.remove("active");
+                }
+            }
+        });
+    }
+
+    async function sendMsg() {
+        if(!currentChatId || !els.msg.value.trim()) return;
+        const txt = els.msg.value;
+        els.msg.value = "";
+        setTypingStatus(false); // Сразу убираем "печатает"
+        
+        await addDoc(collection(db, "chats", currentChatId, "messages"), {
+            uid: auth.currentUser.uid,
+            senderName: currentUserData.nickname,
+            text: txt,
+            time: Date.now()
+        });
+    }
+
+    document.getElementById("btnStart").onclick = startChat;
+    document.getElementById("btnSend").onclick = sendMsg;
+    els.msg.onkeypress = (e) => { if(e.key === "Enter") sendMsg(); };
+
+    onAuthStateChanged(auth, async (u) => {
+        if(u) {
+            els.auth.style.display = "none";
+            els.chatUI.style.display = "flex";
+            els.uidDisplay.innerText = "Ваш UID: " + u.uid;
+            await loadProfile(u.uid);
+            if(localStorage.getItem("lastUid")) {
+                els.toUid.value = localStorage.getItem("lastUid");
+                startChat();
+            }
+        } else {
+            els.auth.style.display = "flex";
+            els.chatUI.style.display = "none";
+        }
+    });
+</script>
+</body>
+</html>
